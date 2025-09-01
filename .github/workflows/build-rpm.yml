@@ -23,32 +23,20 @@ jobs:
     steps:
     - name: Install build dependencies
       run: |
-        dnf update -y
         dnf install -y epel-release
-        dnf config-manager --set-enabled crb || dnf config-manager --set-enabled powertools
+        dnf config-manager --set-enabled crb || true
+        # Install essential RPM build dependencies
         dnf install -y \
-          git \
-          gcc \
-          gcc-c++ \
-          make \
-          cmake \
           rpm-build \
           rpmdevtools \
           rpmlint \
-          curl \
-          wget \
+          git \
           tar \
           gzip \
-          m4 \
-          bison \
-          flex \
-          libuuid-devel \
-          musl-gcc \
-          openssl-devel \
-          pkg-config \
+          curl \
+          wget \
           systemd-devel \
-          libcap-devel \
-          python3
+          libcap-devel
 
     - name: Install Rust toolchain
       run: |
