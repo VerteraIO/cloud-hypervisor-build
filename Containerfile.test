@@ -1,0 +1,21 @@
+# Test environment for Cloud Hypervisor RPM installation
+ARG EL_VERSION=9
+FROM rockylinux/rockylinux:${EL_VERSION}
+
+# Install minimal dependencies for RPM installation testing
+RUN dnf install -y \
+    policycoreutils \
+    selinux-policy-targeted \
+    systemd \
+    && dnf clean all
+
+# Enable systemd (for testing systemd service)
+RUN systemctl set-default multi-user.target
+
+WORKDIR /test
+
+# Copy RPMs from host
+COPY test-rpms/*.rpm /test/
+
+# Default command
+CMD ["/bin/bash"]

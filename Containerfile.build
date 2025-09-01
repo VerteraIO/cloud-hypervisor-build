@@ -1,0 +1,55 @@
+# Build environment for Cloud Hypervisor RPMs
+ARG EL_VERSION=9
+FROM rockylinux/rockylinux:${EL_VERSION}
+
+# Enable EPEL for additional packages
+RUN dnf install -y epel-release && dnf clean all
+
+# Install all build dependencies
+RUN dnf install -y --allowerasing \
+    git \
+    gcc \
+    gcc-c++ \
+    make \
+    cmake \
+    rpm-build \
+    rpmdevtools \
+    rpmlint \
+    curl \
+    wget \
+    tar \
+    gzip \
+    m4 \
+    bison \
+    flex \
+    libuuid-devel \
+    openssl-devel \
+    pkg-config \
+    systemd-devel \
+    libcap-devel \
+    selinux-policy-devel \
+    checkpolicy \
+    policycoreutils-devel \
+    python3 \
+    && dnf clean all
+
+# Install musl-gcc from source since it's not available in Rocky Linux repos
+RUN curl -L https://musl.cc/x86_64-linux-musl-cross.tgz | tar -xz -C /opt/ && \
+    ln -s /opt/x86_64-linux-musl-cross/bin/x86_64-linux-musl-gcc /usr/local/bin/musl-gcc
+
+# Install Rust toolchain
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup target add x86_64-unknown-linux-musl && \
+    rustup target add aarch64-unknown-linux-musl
+
+# Set up RPM build environment
+RUN rpmdev-setuptree
+
+# Set environment variables
+ENV CARGO_TERM_COLOR=always
+
+WORKDIR /workspace
+
+# Default command
+CMD ["/bin/bash"]

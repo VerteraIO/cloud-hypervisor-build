@@ -1,0 +1,5 @@
+/usr/bin/cloud-hypervisor          --  gen_context(system_u:object_r:chv_exec_t,s0)
+/var/lib/cloud-hypervisor(/.*)?         gen_context(system_u:object_r:chv_var_lib_t,s0)
+/var/log/cloud-hypervisor(/.*)?         gen_context(system_u:object_r:chv_var_log_t,s0)
+/etc/cloud-hypervisor(/.*)?             gen_context(system_u:object_r:etc_t,s0)
+/usr/lib/systemd/system/cloud-hypervisor\.service -- gen_context(system_u:object_r:chv_unit_file_t,s0)

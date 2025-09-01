@@ -1,0 +1,173 @@
+name: Build Cloud Hypervisor RPMs
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-rpm:
+    strategy:
+      matrix:
+        el_version: [9, 10]
+    
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux/rockylinux:${{ matrix.el_version }}
+    
+    steps:
+    - name: Install build dependencies
+      run: |
+        dnf update -y
+        dnf install -y epel-release
+        dnf config-manager --set-enabled crb || dnf config-manager --set-enabled powertools
+        dnf install -y \
+          git \
+          gcc \
+          gcc-c++ \
+          make \
+          cmake \
+          rpm-build \
+          rpmdevtools \
+          rpmlint \
+          curl \
+          wget \
+          tar \
+          gzip \
+          m4 \
+          bison \
+          flex \
+          libuuid-devel \
+          musl-gcc \
+          openssl-devel \
+          pkg-config \
+          systemd-devel \
+          libcap-devel \
+          python3
+
+    - name: Install Rust toolchain
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source ~/.cargo/env
+        rustup target add x86_64-unknown-linux-musl
+        rustup target add aarch64-unknown-linux-musl
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Clone cloud-hypervisor
+      run: |
+        git clone https://github.com/cloud-hypervisor/cloud-hypervisor.git
+        cd cloud-hypervisor
+        echo "CH_VERSION=$(git describe --tags --always)" >> $GITHUB_ENV
+        echo "CH_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+        
+        # Get latest release tag for release notes
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        echo "CH_LATEST_TAG=${LATEST_TAG}" >> $GITHUB_ENV
+
+    - name: Fetch release notes
+      run: |
+        cd cloud-hypervisor
+        
+        # Create release notes file
+        cat > ~/rpmbuild/SOURCES/RELEASE_NOTES.md << 'EOF'
+        # Cloud Hypervisor Release Notes
+        
+        EOF
+        
+        # If we have a latest tag, fetch its release notes from GitHub API
+        if [ -n "$CH_LATEST_TAG" ]; then
+          echo "Fetching release notes for tag: $CH_LATEST_TAG"
+          
+          # Try to get release notes from GitHub API
+          RELEASE_NOTES=$(curl -s "https://api.github.com/repos/cloud-hypervisor/cloud-hypervisor/releases/tags/$CH_LATEST_TAG" | \
+            python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('body', '')) if 'body' in data else print('')" 2>/dev/null || echo "")
+          
+          if [ -n "$RELEASE_NOTES" ]; then
+            echo "## Release $CH_LATEST_TAG" >> ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+            echo "" >> ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+            echo "$RELEASE_NOTES" >> ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+            echo "" >> ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+          else
+            echo "No release notes found for tag $CH_LATEST_TAG" >> ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+            echo "" >> ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+          fi
+        else
+          echo "No release tag found - building from development branch" >> ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+          echo "" >> ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+        fi
+        
+        # Generate RPM changelog format
+        cat > ~/rpmbuild/SOURCES/rpm_changelog.txt << EOF
+        * $(date '+%a %b %d %Y') Build System <build@example.com> - ${CH_VERSION}-1
+        - Built from cloud-hypervisor ${CH_VERSION} (${CH_COMMIT})
+        $(if [ -n "$CH_LATEST_TAG" ]; then echo "- Release notes for ${CH_LATEST_TAG}"; fi)
+        - See /usr/share/doc/cloud-hypervisor/RELEASE_NOTES.md for detailed changes
+        EOF
+
+    - name: Setup RPM build environment
+      run: |
+        rpmdev-setuptree
+        
+        # Copy spec file to SPECS directory
+        cp packaging/cloud-hypervisor.spec ~/rpmbuild/SPECS/
+
+    - name: Build cloud-hypervisor binary
+      run: |
+        source ~/.cargo/env
+        cd cloud-hypervisor
+        cargo build --release --target=x86_64-unknown-linux-musl
+        strip target/x86_64-unknown-linux-musl/release/cloud-hypervisor
+        
+        # Copy required files to SOURCES
+        cp target/x86_64-unknown-linux-musl/release/cloud-hypervisor ~/rpmbuild/SOURCES/
+        cp release-notes.md ~/rpmbuild/SOURCES/RELEASE_NOTES.md
+        cp README.md ~/rpmbuild/SOURCES/
+        cp LICENSES/Apache-2.0.txt ~/rpmbuild/SOURCES/LICENSE-APACHE
+        cp LICENSES/BSD-3-Clause.txt ~/rpmbuild/SOURCES/LICENSE-BSD-3-Clause
+        cp ../rpm_changelog.txt ~/rpmbuild/SOURCES/
+
+    - name: Build main RPM package
+      run: |
+        source ~/.cargo/env
+        rpmbuild -ba ~/rpmbuild/SPECS/cloud-hypervisor.spec \
+          --define "version ${CH_VERSION}" \
+          --define "commit ${CH_COMMIT}" \
+          --define "el_version ${{ matrix.el_version }}"
+
+
+    - name: Run RPM lint
+      run: |
+        rpmlint ~/rpmbuild/RPMS/x86_64/*.rpm || true
+
+    - name: Upload RPM artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: cloud-hypervisor-rpms-el${{ matrix.el_version }}
+        path: |
+          ~/rpmbuild/RPMS/x86_64/*.rpm
+          ~/rpmbuild/SRPMS/*.rpm
+        retention-days: 30
+
+    - name: Create release assets (on tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        mkdir -p release-assets
+        cp ~/rpmbuild/RPMS/x86_64/*.rpm release-assets/
+        ls -la release-assets/
+
+    - name: Upload to release (on tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release-assets/*.rpm
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

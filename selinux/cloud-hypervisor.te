@@ -1,0 +1,80 @@
+policy_module(cloud_hypervisor, 1.0.0)
+
+########################################
+#
+# Declarations
+#
+
+type chv_t;
+type chv_exec_t;
+init_daemon_domain(chv_t, chv_exec_t)
+
+type chv_var_lib_t;
+files_type(chv_var_lib_t)
+
+type chv_var_log_t;
+logging_log_file(chv_var_log_t)
+
+type chv_unit_file_t;
+systemd_unit_file(chv_unit_file_t)
+
+########################################
+#
+# cloud_hypervisor local policy
+#
+
+allow chv_t self:capability { net_admin sys_admin sys_resource };
+allow chv_t self:process { setcap };
+allow chv_t self:fifo_file rw_fifo_file_perms;
+allow chv_t self:unix_stream_socket create_stream_socket_perms;
+
+# Network access for TAP interfaces
+allow chv_t self:tun_socket create_socket_perms;
+allow chv_t self:netlink_route_socket create_netlink_socket_perms;
+
+# File system access
+manage_dirs_pattern(chv_t, chv_var_lib_t, chv_var_lib_t)
+manage_files_pattern(chv_t, chv_var_lib_t, chv_var_lib_t)
+files_var_lib_filetrans(chv_t, chv_var_lib_t, { dir file })
+
+manage_dirs_pattern(chv_t, chv_var_log_t, chv_var_log_t)
+manage_files_pattern(chv_t, chv_var_log_t, chv_var_log_t)
+logging_log_filetrans(chv_t, chv_var_log_t, { dir file })
+
+# KVM access
+allow chv_t device_t:chr_file { read write open ioctl };
+
+# Memory management
+allow chv_t self:memprotect mmap_zero;
+
+# System calls needed for virtualization
+allow chv_t self:capability2 { wake_alarm };
+
+# Network device access
+dev_rw_generic_chr_files(chv_t)
+
+# Systemd integration
+init_read_utmp(chv_t)
+init_dontaudit_write_utmp(chv_t)
+
+# Logging
+logging_send_syslog_msg(chv_t)
+
+# Basic system access
+kernel_read_system_state(chv_t)
+kernel_read_network_state(chv_t)
+
+# File contexts
+files_read_etc_files(chv_t)
+miscfiles_read_localization(chv_t)
+
+# Temporary files
+files_manage_generic_tmp_files(chv_t)
+files_tmp_filetrans(chv_t, chv_var_lib_t, { file dir })
+
+# Proc filesystem
+kernel_read_proc_symlinks(chv_t)
+kernel_read_kernel_sysctls(chv_t)
+
+# Domain transitions
+domain_use_interactive_fds(chv_t)
