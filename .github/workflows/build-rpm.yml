@@ -27,9 +27,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Build RPM packages
-      run: |
-        source ~/.cargo/env
-        make all EL_VERSION=${{ matrix.el_version }}
+      run: make all EL_VERSION=${{ matrix.el_version }}
 
     - name: Upload RPM artifacts
       uses: actions/upload-artifact@v4
