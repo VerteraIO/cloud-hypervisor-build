@@ -11,32 +11,53 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-rpm:
+  build:
     strategy:
       matrix:
         el_version: [9, 10]
+      fail-fast: false
     
     runs-on: ubuntu-latest
     container:
       image: rockylinux/rockylinux:${{ matrix.el_version }}
+    timeout-minutes: 30
     
     steps:
     - name: Install build dependencies
       run: |
-        dnf install -y epel-release
-        dnf config-manager --set-enabled crb || true
-        # Install essential RPM build dependencies
-        dnf install -y \
-          rpm-build \
-          rpmdevtools \
-          rpmlint \
-          git \
-          tar \
-          gzip \
-          curl \
-          wget \
-          systemd-devel \
-          libcap-devel
+        # Configure repositories with retries and fallbacks
+        for i in {1..3}; do
+          dnf clean all
+          dnf makecache --refresh && break
+          echo "Repository refresh attempt $i failed, retrying..."
+          sleep 10
+        done
+        
+        # Install EPEL with retry
+        for i in {1..3}; do
+          dnf install -y epel-release && break
+          echo "EPEL install attempt $i failed, retrying..."
+          sleep 10
+        done
+        
+        # Enable CRB/PowerTools repository
+        dnf config-manager --set-enabled crb || dnf config-manager --set-enabled powertools || true
+        
+        # Install essential RPM build dependencies with retry
+        for i in {1..3}; do
+          dnf install -y --allowerasing \
+            rpm-build \
+            rpmdevtools \
+            rpmlint \
+            git \
+            tar \
+            gzip \
+            wget \
+            systemd-devel \
+            libcap-devel && break
+          echo "Package install attempt $i failed, retrying..."
+          sleep 10
+        done
 
     - name: Install Rust toolchain
       run: |
