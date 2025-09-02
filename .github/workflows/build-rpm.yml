@@ -19,7 +19,7 @@ jobs:
     
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository }}/builder:el${{ matrix.el_version }}
+      image: ghcr.io/verteraio/cloud-hypervisor-build/builder:el${{ matrix.el_version }}
     timeout-minutes: 20
     
     steps:
