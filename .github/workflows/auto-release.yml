@@ -1,0 +1,194 @@
+name: Automated Cloud Hypervisor Release
+
+on:
+  schedule:
+    # Check for new releases daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if no new version detected'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version_check.outputs.new_version }}
+      latest_tag: ${{ steps.version_check.outputs.latest_tag }}
+      should_build: ${{ steps.version_check.outputs.should_build }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check for new Cloud Hypervisor version
+      id: version_check
+      run: |
+        # Get latest Cloud Hypervisor release
+        LATEST_CH_VERSION=$(curl -s https://api.github.com/repos/cloud-hypervisor/cloud-hypervisor/releases/latest | jq -r '.tag_name')
+        echo "Latest CH version: $LATEST_CH_VERSION"
+        
+        # Get our latest release tag
+        LATEST_OUR_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+        echo "Our latest tag: $LATEST_OUR_TAG"
+        
+        # Check if we should build
+        SHOULD_BUILD="false"
+        if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+          echo "Force build requested"
+          SHOULD_BUILD="true"
+        elif [ "$LATEST_OUR_TAG" = "none" ]; then
+          echo "No previous releases found, building first release"
+          SHOULD_BUILD="true"
+        elif [ "$LATEST_CH_VERSION" != "$LATEST_OUR_TAG" ]; then
+          echo "New version detected: $LATEST_CH_VERSION (current: $LATEST_OUR_TAG)"
+          SHOULD_BUILD="true"
+        else
+          echo "No new version detected"
+        fi
+        
+        echo "new_version=$LATEST_CH_VERSION" >> $GITHUB_OUTPUT
+        echo "latest_tag=$LATEST_OUR_TAG" >> $GITHUB_OUTPUT
+        echo "should_build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
+
+  build-and-release:
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    strategy:
+      matrix:
+        el_version: [9, 10]
+      fail-fast: false
+    
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/verteraio/cloud-hypervisor-build/builder:el${{ matrix.el_version }}
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Build RPM packages
+      run: make all EL_VERSION=${{ matrix.el_version }}
+
+    - name: Create release assets
+      run: |
+        mkdir -p release-assets
+        cp ~/rpmbuild/RPMS/x86_64/*.rpm release-assets/
+        cp ~/rpmbuild/SRPMS/*.rpm release-assets/
+        
+        # Rename files to include EL version for clarity
+        cd release-assets
+        for file in *.rpm; do
+          if [[ ! "$file" =~ \.el[0-9]+\. ]]; then
+            base="${file%.rpm}"
+            ext="${file##*.}"
+            mv "$file" "${base}.el${{ matrix.el_version }}.${ext}"
+          fi
+        done
+        
+        ls -la
+
+    - name: Upload artifacts for release
+      uses: actions/upload-artifact@v4
+      with:
+        name: rpms-el${{ matrix.el_version }}
+        path: release-assets/*.rpm
+        retention-days: 7
+
+  create-release:
+    needs: [check-version, build-and-release]
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: release-assets
+
+    - name: Organize release assets
+      run: |
+        mkdir -p final-release
+        find release-assets -name "*.rpm" -exec cp {} final-release/ \;
+        ls -la final-release/
+
+    - name: Create and push tag
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        TAG="${{ needs.check-version.outputs.new_version }}"
+        git tag -a "$TAG" -m "Automated release for Cloud Hypervisor $TAG"
+        git push origin "$TAG"
+
+    - name: Get Cloud Hypervisor release notes
+      id: release_notes
+      run: |
+        CH_VERSION="${{ needs.check-version.outputs.new_version }}"
+        RELEASE_NOTES=$(curl -s "https://api.github.com/repos/cloud-hypervisor/cloud-hypervisor/releases/tags/$CH_VERSION" | jq -r '.body // "No release notes available"')
+        
+        # Create our release notes
+        cat > release_notes.md << EOF
+        # Cloud Hypervisor RPM Packages - $CH_VERSION
+        
+        This automated release provides RPM packages for Cloud Hypervisor $CH_VERSION.
+        
+        ## Available Packages
+        - **EL9 (RHEL 9, Rocky Linux 9, AlmaLinux 9)**: \`cloud-hypervisor-*.el9.x86_64.rpm\`
+        - **EL10 (RHEL 10, Rocky Linux 10, AlmaLinux 10)**: \`cloud-hypervisor-*.el10.x86_64.rpm\`
+        - **Source RPMs**: Available for both EL9 and EL10
+        
+        ## Installation
+        \`\`\`bash
+        # Download the appropriate RPM for your EL version
+        sudo rpm -ivh cloud-hypervisor-*.el9.x86_64.rpm  # For EL9
+        sudo rpm -ivh cloud-hypervisor-*.el10.x86_64.rpm # For EL10
+        
+        # Enable and start the service
+        sudo systemctl enable cloud-hypervisor
+        sudo systemctl start cloud-hypervisor
+        \`\`\`
+        
+        ## Security Features
+        - Static musl binary for enhanced security and portability
+        - Systemd service with comprehensive security hardening
+        - Dedicated service user with minimal privileges
+        - CAP_NET_ADMIN capability for network operations
+        - SELinux compatible
+        
+        ## Upstream Release Notes
+        $RELEASE_NOTES
+        EOF
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.check-version.outputs.new_version }}
+        name: "Cloud Hypervisor ${{ needs.check-version.outputs.new_version }}"
+        body_path: release_notes.md
+        files: final-release/*.rpm
+        draft: false
+        prerelease: false
+        generate_release_notes: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Notify success
+      run: |
+        echo "✅ Successfully created release ${{ needs.check-version.outputs.new_version }}"
+        echo "📦 RPM packages built for EL9 and EL10"
+        echo "🚀 Release published to GitHub"
