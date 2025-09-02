@@ -3,6 +3,7 @@ name: Build Cloud Hypervisor RPMs
 on:
   push:
     branches: [ main, develop ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -43,6 +44,7 @@ jobs:
       run: |
         mkdir -p release-assets
         cp ~/rpmbuild/RPMS/x86_64/*.rpm release-assets/
+        cp ~/rpmbuild/SRPMS/*.rpm release-assets/
         ls -la release-assets/
 
     - name: Upload to release (on tag)
@@ -52,5 +54,25 @@ jobs:
         files: release-assets/*.rpm
         draft: false
         prerelease: false
+        generate_release_notes: true
+        body: |
+          ## Cloud Hypervisor RPM Packages
+          
+          This release includes RPM packages for Enterprise Linux ${{ matrix.el_version }}:
+          
+          - **Binary RPM**: Contains the cloud-hypervisor binary and systemd service
+          - **Source RPM**: Contains the source code for rebuilding
+          
+          ### Installation
+          ```bash
+          sudo rpm -ivh cloud-hypervisor-*.el${{ matrix.el_version }}.x86_64.rpm
+          sudo systemctl enable cloud-hypervisor
+          ```
+          
+          ### Security Features
+          - Static musl binary for enhanced security
+          - Systemd service with security hardening
+          - Dedicated service user with minimal privileges
+          - CAP_NET_ADMIN capability for network operations
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
