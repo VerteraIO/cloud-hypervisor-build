@@ -95,17 +95,17 @@ build-rpm:
 	
 	@echo "=== RPM build completed successfully ==="
 	@echo "Generated RPM files:"
-	@ls -la $(RPMBUILD_DIR)/RPMS/x86_64/cloud-hypervisor-*.rpm
-	@ls -la $(RPMBUILD_DIR)/SRPMS/cloud-hypervisor-*.src.rpm
+	@ls -la $(HOME)/rpmbuild/RPMS/x86_64/cloud-hypervisor-*.rpm
+	@ls -la $(HOME)/rpmbuild/SRPMS/cloud-hypervisor-*.src.rpm
 	
 	@echo "=== Running rpmlint checks ==="
-	-rpmlint $(RPMBUILD_DIR)/RPMS/*/cloud-hypervisor*.rpm
+	-rpmlint $(HOME)/rpmbuild/RPMS/*/cloud-hypervisor*.rpm
 
 test:
 	@echo "=== Testing RPM installation ==="
-	@if [ -f "$(RPMBUILD_DIR)/RPMS/x86_64/cloud-hypervisor-"*".rpm" ]; then \
+	@if [ -f "$(HOME)/rpmbuild/RPMS/x86_64/cloud-hypervisor-"*".rpm" ]; then \
 		echo "RPM file found, ready for testing"; \
-		ls -la $(RPMBUILD_DIR)/RPMS/x86_64/cloud-hypervisor-*.rpm; \
+		ls -la $(HOME)/rpmbuild/RPMS/x86_64/cloud-hypervisor-*.rpm; \
 	else \
 		echo "No RPM file found. Run 'make all' first."; \
 		exit 1; \
@@ -114,10 +114,10 @@ test:
 clean:
 	@echo "=== Cleaning build artifacts ==="
 	rm -rf cloud-hypervisor
-	rm -rf $(RPMBUILD_DIR)/BUILD/*
-	rm -rf $(RPMBUILD_DIR)/BUILDROOT/*
-	rm -f $(RPMBUILD_DIR)/RPMS/*/cloud-hypervisor*
-	rm -f $(RPMBUILD_DIR)/SRPMS/cloud-hypervisor*
+	rm -rf $(HOME)/rpmbuild/BUILD/*
+	rm -rf $(HOME)/rpmbuild/BUILDROOT/*
+	rm -f $(HOME)/rpmbuild/RPMS/*/cloud-hypervisor*
+	rm -f $(HOME)/rpmbuild/SRPMS/cloud-hypervisor*
 	rm -f $(SOURCES_DIR)/cloud-hypervisor
 	rm -f $(SOURCES_DIR)/RELEASE_NOTES.md
 	rm -f $(SOURCES_DIR)/README.md
