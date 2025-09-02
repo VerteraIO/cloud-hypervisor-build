@@ -19,53 +19,10 @@ jobs:
     
     runs-on: ubuntu-latest
     container:
-      image: rockylinux/rockylinux:${{ matrix.el_version }}
-    timeout-minutes: 30
+      image: ghcr.io/${{ github.repository }}/builder:el${{ matrix.el_version }}
+    timeout-minutes: 20
     
     steps:
-    - name: Install build dependencies
-      run: |
-        # Configure repositories with retries and fallbacks
-        for i in {1..3}; do
-          dnf clean all
-          dnf makecache --refresh && break
-          echo "Repository refresh attempt $i failed, retrying..."
-          sleep 10
-        done
-        
-        # Install EPEL with retry
-        for i in {1..3}; do
-          dnf install -y epel-release && break
-          echo "EPEL install attempt $i failed, retrying..."
-          sleep 10
-        done
-        
-        # Enable CRB/PowerTools repository
-        dnf config-manager --set-enabled crb || dnf config-manager --set-enabled powertools || true
-        
-        # Install essential RPM build dependencies with retry
-        for i in {1..3}; do
-          dnf install -y --allowerasing \
-            rpm-build \
-            rpmdevtools \
-            rpmlint \
-            git \
-            tar \
-            gzip \
-            wget \
-            systemd-devel \
-            libcap-devel && break
-          echo "Package install attempt $i failed, retrying..."
-          sleep 10
-        done
-
-    - name: Install Rust toolchain
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source ~/.cargo/env
-        rustup target add x86_64-unknown-linux-musl
-        rustup target add aarch64-unknown-linux-musl
-
     - name: Checkout repository
       uses: actions/checkout@v4
 
