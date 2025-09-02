@@ -2,20 +2,23 @@
 
 # Variables
 CH_REPO = https://github.com/cloud-hypervisor/cloud-hypervisor.git
-RPMBUILD_DIR = $(HOME)/rpmbuild
-SOURCES_DIR = $(RPMBUILD_DIR)/SOURCES
-SPECS_DIR = $(RPMBUILD_DIR)/SPECS
 TARGET = x86_64-unknown-linux-musl
 EL_VERSION ?= 9
+SOURCES_DIR = $(HOME)/rpmbuild/SOURCES
+SPECS_DIR = $(HOME)/rpmbuild/SPECS
+
+# Rust toolchain variables
+RUSTUP ?= $(HOME)/.cargo/bin/rustup
+CARGO  ?= $(HOME)/.cargo/bin/cargo
 
 # Get version info from git
 CH_VERSION := $(shell cd cloud-hypervisor 2>/dev/null && git describe --tags --always || echo "unknown")
 CH_COMMIT := $(shell cd cloud-hypervisor 2>/dev/null && git rev-parse HEAD || echo "unknown")
 CH_LATEST_TAG := $(shell cd cloud-hypervisor 2>/dev/null && git describe --tags --abbrev=0 2>/dev/null || echo "")
 
-.PHONY: all clean setup clone build-binary copy-files build-rpm test
+.PHONY: all clean setup clone setup-rust build-binary copy-files build-rpm test
 
-all: setup clone build-binary copy-files build-rpm
+all: setup clone setup-rust build-binary copy-files build-rpm
 
 setup:
 	@echo "=== Setting up RPM build environment ==="
@@ -29,10 +32,16 @@ clone:
 		cd cloud-hypervisor && git pull; \
 	fi
 
-build-binary:
+setup-rust:
+	@echo "=== Setting up Rust toolchain ==="
+	@command -v $(RUSTUP) >/dev/null 2>&1 || (curl https://sh.rustup.rs -sSf | sh -s -- -y)
+	@$(RUSTUP) default stable
+	@$(RUSTUP) target add $(TARGET)
+
+build-binary: setup-rust
 	@echo "=== Building cloud-hypervisor binary ==="
 	cd cloud-hypervisor && \
-	cargo build --release --target=$(TARGET) && \
+	$(CARGO) +stable build --release --target=$(TARGET) && \
 	strip target/$(TARGET)/release/cloud-hypervisor
 
 copy-files:
