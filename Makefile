@@ -15,6 +15,9 @@ CARGO  ?= $(HOME)/.cargo/bin/cargo
 CH_VERSION := $(shell cd cloud-hypervisor 2>/dev/null && git describe --tags --always || echo "unknown")
 CH_COMMIT := $(shell cd cloud-hypervisor 2>/dev/null && git rev-parse HEAD || echo "unknown")
 CH_LATEST_TAG := $(shell cd cloud-hypervisor 2>/dev/null && git describe --tags --abbrev=0 2>/dev/null || echo "")
+# Derive RPM spec gitver (major.minor) from CH_VERSION like v48.0, v48.0-1-g<hash>
+CH_GITVER := $(shell echo $(CH_VERSION) | sed -E 's/^v?([0-9]+\.[0-9]+).*/\1/')
+CH_GITNUM ?= 0
 
 .PHONY: all clean setup clone setup-rust build-binary copy-files build-rpm test
 
@@ -90,6 +93,8 @@ copy-files:
 build-rpm:
 	@echo "=== Building RPM package ==="
 	rpmbuild -ba $(SPECS_DIR)/cloud-hypervisor.spec \
+		--define "gitver $(CH_GITVER)" \
+		--define "gitnum $(CH_GITNUM)" \
 		--define "version $(CH_VERSION)" \
 		--define "el_version $(EL_VERSION)"
 	
